@@ -13,10 +13,10 @@ try:
     )
 except ImportError:
     redis = None
-    class RedisError(Exception): pass
-    class RedisConnectionError(RedisError): pass
-    class RedisTimeoutError(RedisError): pass
-    class BusyLoadingError(RedisError): pass
+    RedisConnectionError = Exception
+    RedisTimeoutError = Exception
+    BusyLoadingError = Exception
+    RedisError = Exception
 
 from cache_layer.contract import CacheProvider
 from cache_layer.exceptions import (
@@ -73,13 +73,13 @@ class RedisAdapter(CacheProvider):
         return "redis"
 
     def _handle_error(self, err: Exception, op_name: str) -> None:
+        if isinstance(err, (RedisConnectionError, BusyLoadingError)):
+            raise CacheConnectionError(
+                f"Redis connection failed during {op_name}: {err}", original_error=err
+            ) from err
         if isinstance(err, RedisTimeoutError):
             raise CacheTimeoutError(
                 f"Redis operation timed out during {op_name}: {err}", original_error=err
-            ) from err
-        if isinstance(err, (RedisConnectionError, BusyLoadingError, ConnectionRefusedError, ConnectionResetError, ConnectionError, OSError)):
-            raise CacheConnectionError(
-                f"Redis connection failed during {op_name}: {err}", original_error=err
             ) from err
         if isinstance(err, RedisError):
             raise CacheBackendError(

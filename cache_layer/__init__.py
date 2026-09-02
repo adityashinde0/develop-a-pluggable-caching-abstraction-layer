@@ -12,7 +12,6 @@ from cache_layer.exceptions import (
     CacheTimeoutError,
     CacheValidationError,
 )
-from cache_layer.factory import CacheConfig, ProviderFactory
 from cache_layer.serializer import PortableJsonSerializer, Serializer
 from cache_layer.service import CacheService
 from cache_layer.validation import validate_key, validate_namespace, validate_ttl
@@ -20,8 +19,6 @@ from cache_layer.validation import validate_key, validate_namespace, validate_tt
 __all__ = [
     "CacheProvider",
     "CacheService",
-    "CacheConfig",
-    "ProviderFactory",
     "RedisAdapter",
     "MemcachedAdapter",
     "Serializer",
@@ -37,4 +34,3 @@ __all__ = [
     "CacheConfigurationError",
     "CacheBackendError",
 ]
-
