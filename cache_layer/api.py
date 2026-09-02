@@ -132,6 +132,21 @@ def cache_info():
     }
 
 
+@app.get("/cache/metrics", summary="Cache metrics snapshot", tags=["Observability"])
+def cache_metrics():
+    """Retrieve runtime cache metrics (hits, misses, hit ratio, average/p50/p95 latencies)."""
+    service = get_cache_service()
+    return service.get_metrics()
+
+
+@app.post("/cache/metrics/reset", summary="Reset cache metrics", tags=["Observability"])
+def reset_cache_metrics():
+    """Reset all aggregated metrics counters and latency samples."""
+    service = get_cache_service()
+    service.reset_metrics()
+    return {"status": "metrics_reset", "provider": service.provider_name}
+
+
 @app.get("/cache/{key}", summary="Retrieve cached value", tags=["Cache Operations"])
 def get_cache(key: str):
     """Retrieve a value by key. Returns 404 on cache miss."""
