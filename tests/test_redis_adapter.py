@@ -2,10 +2,12 @@
 
 from unittest.mock import MagicMock
 import pytest
-import redis
-from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError, RedisError
-
-from cache_layer.adapters.redis_adapter import RedisAdapter
+from cache_layer.adapters.redis_adapter import (
+    RedisAdapter,
+    RedisConnectionError,
+    RedisError,
+    RedisTimeoutError,
+)
 from cache_layer.exceptions import (
     CacheBackendError,
     CacheConnectionError,

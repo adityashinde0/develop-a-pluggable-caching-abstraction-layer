@@ -2,15 +2,15 @@ Header
 - Project name: Pluggable Caching Abstraction Layer
 - Hackathon: IBM National Hackathon
 - Start timestamp: TBD at build start
-- Current phase: Planning complete, build not started
+- Current phase: Build complete, all MVP tasks verified
 Task Table
 Task	Owner	Dependency	Status	Notes
 Unified cache contract	Programmer 1	None	done	Critical path; defines shared semantics/interfaces (CacheProvider ABC)
 Redis adapter	Programmer 1	Cache contract	done	Critical path; includes pooled client integration (RedisAdapter)
 Memcached adapter	Programmer 1	Cache contract	done	Critical path; must satisfy same contract (MemcachedAdapter)
-Configuration-driven provider selection	Programmer 2	Cache contract	todo	Independently testable factory/config module
+Configuration-driven provider selection	Programmer 2	Cache contract	done	Independently testable factory/config module (`cache_layer/factory.py`)
 Normalized reliability layer	Programmer 1	Cache contract + adapters	done	Critical path; validation, serialization, timeout/error mapping (CacheService, PortableJsonSerializer, CacheError hierarchy)
-Contract/API test & demo harness	Programmer 3	Stable contract; adapters progressively	todo	Independent validation/benchmark/demo work; final integration with Programmer 1
+Contract/API test & demo harness	Programmer 3	Stable contract; adapters progressively	done	Demo harness script (`demo_harness.py`) and factory unit tests (`tests/test_factory.py`)
 
 
 Decisions Log
