@@ -197,3 +197,49 @@ def switch_backend(req: CacheSwitchRequest):
         "provider": new_service.provider_name,
         "namespace": new_service.namespace,
     }
+
+
+# -------------------------------------------------------------
+# Real-World E-Commerce Application Endpoints (Phase 1)
+# -------------------------------------------------------------
+from examples.ecommerce_service import ProductCatalogService
+
+class ProductPriceUpdateRequest(BaseModel):
+    price: float = Field(..., gt=0, description="New price for the product")
+
+
+@app.get("/products/{product_id}", summary="Get product details with cache-aside", tags=["E-Commerce Application"])
+def get_product(product_id: str):
+    """Retrieve product data using transparent cache-aside pattern.
+    First request: Cache MISS (~100ms simulated DB query).
+    Subsequent requests: Cache HIT (<2ms).
+    """
+    service = get_cache_service()
+    catalog = ProductCatalogService(service)
+    product = catalog.get_product(product_id)
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product '{product_id}' not found in catalog",
+        )
+    return product
+
+
+@app.put("/products/{product_id}/price", summary="Update product price & invalidate cache", tags=["E-Commerce Application"])
+def update_product_price(product_id: str, req: ProductPriceUpdateRequest):
+    """Update product price in the database and invalidate the cached entry."""
+    service = get_cache_service()
+    catalog = ProductCatalogService(service)
+    success = catalog.update_product_price(product_id, req.price)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product '{product_id}' not found in catalog",
+        )
+    return {
+        "product_id": product_id,
+        "updated": True,
+        "new_price": req.price,
+        "cache_invalidated": True,
+    }
+
