@@ -11,10 +11,11 @@ Applications often suffer from vendor lock-in when calling backend-specific cach
 This library solves the problem by providing:
 - **One Stable Contract**: Application code interacts with a single `CacheService` / `CacheProvider` interface (`get`, `get_with_status`, `exists`, `set`, `delete`, `clear`, `health_check`).
 - **Zero Application Code Changes**: Switch between Redis and Memcached via configuration without changing application-facing cache calls.
+- **Disambiguated Hit/Miss Semantics**: Authoritative `get_with_status()` and `exists()` methods explicitly distinguishing a true cache miss (`HTTP 404`) from a cached `None` (`HTTP 200 {"value": null}`).
 - **Normalized Reliability Layer**: Unified exception hierarchy (`CacheConnectionError`, `CacheTimeoutError`, `CacheValidationError`, etc.) mapping backend-specific errors into predictable domain exceptions.
 - **Portable Serialization**: Type-preserving, vendor-neutral serialization handling primitives (`str`, `int`, `float`, `bool`, `None`, `bytes`) and JSON-serializable complex data structures.
-- **Connection Pooling & Health Checks**: Connection pooling and latency-aware health checks for both backends.
-- **Namespace-Safe Clear**: Redis utilizes `SCAN` pattern batch deletion and Memcached utilizes epoch versioning (`_ns_ver:<ns>`) so clearing a namespace never clears unrelated applications.
+- **Namespace-Safe Clear**: Redis utilizes `SCAN` pattern batch deletion and Memcached utilizes epoch versioning (`_ns_ver:<ns>`) so clearing a namespace never wipes out data from unrelated applications.
+- **TTL Portability**: Uniform relative TTL semantics with automatic Unix epoch translation for Memcached durations $> 30$ days (`2,592,000s`).
 - **Configuration-Driven Factory**: Instantiate providers and services via environment variables (`CACHE_BACKEND`, `REDIS_HOST`, `MEMCACHED_HOST`, etc.) or dictionary configs.
 - **REST API & Concurrency-Safe Service Management**: Built-in FastAPI server with reference-counted request draining on dynamic backend switches.
 
@@ -49,8 +50,8 @@ flowchart TD
 
 ```text
 ├── cache_layer/
-│   ├── __init__.py           # Public exports
-│   ├── api.py                # FastAPI REST API endpoints & ServiceManager
+│   ├── __init__.py           # Public package exports
+│   ├── api.py                # FastAPI REST server & ServiceManager
 │   ├── config.py             # CacheConfig, RedisConfig, MemcachedConfig
 │   ├── contract.py           # CacheProvider ABC interface
 │   ├── exceptions.py         # Normalized exception hierarchy
@@ -63,6 +64,8 @@ flowchart TD
 │       ├── __init__.py
 │       ├── redis_adapter.py      # Pooled Redis client adapter
 │       └── memcached_adapter.py  # Pooled pymemcache adapter
+├── examples/
+│   └── ecommerce_service.py  # Real-world e-commerce catalog service
 ├── tests/
 │   ├── test_api.py               # REST API & concurrency draining tests
 │   ├── test_cache_service.py     # End-to-end service & interchangeability tests
@@ -76,9 +79,13 @@ flowchart TD
 │   ├── test_redis_adapter.py     # Redis adapter unit & error injection tests
 │   ├── test_serializer.py        # Portable serializer tests
 │   └── test_validation.py        # Key/TTL validation tests
-├── benchmark.py              # Reproducible benchmark harness
-├── demo.py                   # Interactive Demo Script & test harness
+├── benchmark.py              # Reproducible 1,000-op benchmark harness
+├── demo.py                   # Interactive 5-step demo harness
 ├── ecommerce_demo.py         # Real-world e-commerce catalog demo
+├── docker-compose.yml        # Docker Compose configuration (Redis + Memcached)
+├── Dockerfile                # Test runner container definition
+├── requirements.txt          # Explicit package dependencies
+├── pytest.ini                # Pytest configuration & markers
 ├── ARCHITECTURE.md           # Technical baseline & architecture specifications
 ├── PRD.md                    # Product requirements document
 ├── PROGRESS.md               # Task tracking & decisions log
@@ -87,13 +94,25 @@ flowchart TD
 
 ---
 
-## 📦 Installation & Requirements
+## 📦 Installation & Setup
 
-### Dependencies
-Install the required dependencies:
-
+### Local Installation
 ```bash
-pip install redis pymemcache fastapi uvicorn httpx pytest pytest-cov
+pip install -r requirements.txt
+```
+
+---
+
+## 🐳 Docker Setup
+
+### Option 1: Start Redis and Memcached Daemons (For Local Host Testing)
+```bash
+docker compose up -d redis memcached
+```
+
+### Option 2: Run Full Test Suite in Container (Zero Host Dependencies)
+```bash
+docker compose up --build app-test
 ```
 
 ---
@@ -179,7 +198,7 @@ except CacheError as e:
 
 ---
 
-## 🌐 Running the REST API Server
+## 🌐 REST API Endpoints
 
 Start the FastAPI application with Uvicorn:
 
@@ -187,17 +206,19 @@ Start the FastAPI application with Uvicorn:
 uvicorn cache_layer.api:app --reload --port 8000
 ```
 
-### API Endpoints
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/health` | Backend health check and latency report |
 | `GET` | `/cache/info` | Current active backend and namespace info |
-| `GET` | `/cache/metrics` | Real-time operations, hit ratio, and latency percentiles |
+| `GET` | `/cache/metrics` | Real-time operation counts, hit ratio, and latency percentiles |
+| `POST`| `/cache/metrics/reset` | Reset telemetry and latency buffers |
 | `GET` | `/cache/{key}` | Retrieve cached value (`404` on miss, `200` on cached value/None) |
 | `PUT` | `/cache/{key}` | Store value with optional `ttl` |
 | `DELETE` | `/cache/{key}` | Delete specific key |
 | `DELETE` | `/cache` | Clear configured namespace |
-| `POST` | `/cache/switch` | Dynamically switch backend provider at runtime |
+| `POST` | `/cache/switch` | Dynamically switch backend provider with request draining |
+| `GET` | `/products/{product_id}` | E-commerce catalog retrieval with cache-aside |
+| `PUT` | `/products/{product_id}/price` | Update product price and invalidate cache |
 
 ---
 
@@ -213,7 +234,7 @@ python ecommerce_demo.py
 # Isolated in-memory abstraction & instrumentation benchmark
 python benchmark.py
 
-# Live network daemon benchmark (requires active Redis on 6379 / Memcached on 11211)
+# Live network daemon benchmark (against live Redis on 6379 / Memcached on 11211)
 python benchmark.py --live
 ```
 
@@ -224,11 +245,14 @@ python benchmark.py --live
 Execute the automated test suite:
 
 ```bash
-# Run all unit and contract tests
+# Run all unit, contract, and e-commerce tests
 python -m pytest -v
 
-# Run with coverage report
+# Run with statement coverage report
 python -m pytest --cov=cache_layer -v
+
+# Run live real-backend integration tests (when Redis/Memcached are active)
+python -m pytest tests/test_integration_real_backends.py -v
 ```
 
 ---
