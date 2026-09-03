@@ -17,7 +17,11 @@ def setup_mock_service():
     mock_redis = MagicMock()
     mock_redis.get.side_effect = lambda k: mock_store.get(k)
     mock_redis.set.side_effect = lambda k, v, **kw: mock_store.update({k: v}) or True
-    mock_redis.delete.side_effect = lambda k: mock_store.pop(k, None) is not None or True
+    mock_redis.delete.side_effect = lambda *keys: [mock_store.pop(k, None) for k in keys] or True
+    mock_redis.exists.side_effect = lambda k: 1 if k in mock_store else 0
+    mock_redis.scan_iter.side_effect = lambda match=None, count=None: [
+        k for k in list(mock_store.keys()) if match is None or k.startswith(match.replace("*", ""))
+    ]
     mock_redis.flushdb.side_effect = lambda: mock_store.clear() or True
     mock_redis.ping.return_value = True
 
@@ -74,6 +78,28 @@ def test_api_crud_flow():
     # GET after delete
     resp = client.get("/cache/user_42")
     assert resp.status_code == 404
+
+
+def test_api_cached_none():
+    client = TestClient(app)
+
+    # 1. Store None
+    resp_put = client.put("/cache/key_with_none", json={"value": None})
+    assert resp_put.status_code == 200
+    assert resp_put.json()["stored"] is True
+
+    # 2. Retrieve None -> Must be HTTP 200 (HIT with null), NOT 404!
+    resp_get = client.get("/cache/key_with_none")
+    assert resp_get.status_code == 200
+    data = resp_get.json()
+    assert data["cached"] is True
+    assert data["value"] is None
+
+    # 3. Delete key
+    client.delete("/cache/key_with_none")
+
+    # 4. Retrieve after delete -> Must be HTTP 404
+    assert client.get("/cache/key_with_none").status_code == 404
 
 
 def test_api_clear():

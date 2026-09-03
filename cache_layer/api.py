@@ -1,5 +1,6 @@
 """REST API server exposing unified caching endpoints and dynamic runtime backend switching."""
 
+import threading
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 from fastapi import FastAPI, HTTPException, Request, Response, status
@@ -19,24 +20,33 @@ from cache_layer.exceptions import (
 from cache_layer.factory import ProviderFactory
 from cache_layer.service import CacheService
 
-# Shared global CacheService instance
+# Thread-safe global CacheService instance management
+_service_lock = threading.RLock()
 _cache_service: Optional[CacheService] = None
 
 
 def get_cache_service() -> CacheService:
-    """Get or initialize the active global CacheService."""
+    """Get or initialize the active global CacheService in a thread-safe manner."""
     global _cache_service
-    if _cache_service is None:
-        _cache_service = ProviderFactory.create_service()
-    return _cache_service
+    with _service_lock:
+        if _cache_service is None:
+            _cache_service = ProviderFactory.create_service()
+        return _cache_service
 
 
 def set_cache_service(service: CacheService) -> None:
-    """Set the active global CacheService."""
+    """Safely replace the active global CacheService, closing the retired service."""
     global _cache_service
-    if _cache_service is not None and _cache_service is not service:
-        _cache_service.close()
-    _cache_service = service
+    old_service = None
+    with _service_lock:
+        old_service = _cache_service
+        _cache_service = service
+
+    if old_service is not None and old_service is not service:
+        try:
+            old_service.close()
+        except Exception:
+            pass
 
 
 @asynccontextmanager
@@ -46,9 +56,13 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown: close open connections
     global _cache_service
-    if _cache_service is not None:
-        _cache_service.close()
-        _cache_service = None
+    with _service_lock:
+        if _cache_service is not None:
+            try:
+                _cache_service.close()
+            except Exception:
+                pass
+            _cache_service = None
 
 
 app = FastAPI(
@@ -149,10 +163,13 @@ def reset_cache_metrics():
 
 @app.get("/cache/{key}", summary="Retrieve cached value", tags=["Cache Operations"])
 def get_cache(key: str):
-    """Retrieve a value by key. Returns 404 on cache miss."""
+    """Retrieve a value by key.
+
+    Disambiguates Cache Miss (404) vs Cached None (200 with value: null).
+    """
     service = get_cache_service()
-    val = service.get(key)
-    if val is None:
+    is_hit, val = service.get_with_status(key)
+    if not is_hit:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Key '{key}' not found in cache",
@@ -192,20 +209,33 @@ def delete_cache(key: str):
 
 @app.delete("/cache", summary="Clear cache store", tags=["Cache Operations"])
 def clear_cache():
-    """Clear all entries in the configured cache store or namespace."""
+    """Clear entries in the configured cache store or namespace."""
     service = get_cache_service()
     success = service.clear()
     return {
         "cleared": success,
         "provider": service.provider_name,
+        "namespace": service.namespace,
     }
 
 
 @app.post("/cache/switch", summary="Switch backend at runtime", tags=["System"])
 def switch_backend(req: CacheSwitchRequest):
-    """Dynamically switch the active cache backend (e.g. from Redis to Memcached) at runtime."""
+    """Dynamically switch the active cache backend with pre-switch validation and thread safety."""
     data = req.model_dump(exclude_none=True)
+    # Instantiate new candidate service
     new_service = ProviderFactory.create_service(data)
+
+    # Validate candidate service connectivity
+    health = new_service.health_check()
+    if health.get("status") != "healthy":
+        new_service.close()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Cannot switch to '{req.backend}': Target provider failed health check ({health.get('details', {})})",
+        )
+
+    # Atomically replace global service
     set_cache_service(new_service)
     return {
         "status": "switched",
@@ -215,9 +245,10 @@ def switch_backend(req: CacheSwitchRequest):
 
 
 # -------------------------------------------------------------
-# Real-World E-Commerce Application Endpoints (Phase 1)
+# Real-World E-Commerce Application Endpoints
 # -------------------------------------------------------------
 from examples.ecommerce_service import ProductCatalogService
+
 
 class ProductPriceUpdateRequest(BaseModel):
     price: float = Field(..., gt=0, description="New price for the product")
@@ -257,4 +288,3 @@ def update_product_price(product_id: str, req: ProductPriceUpdateRequest):
         "new_price": req.price,
         "cache_invalidated": True,
     }
-

@@ -5,17 +5,22 @@ from typing import Optional
 
 from cache_layer.exceptions import CacheValidationError
 
-# Memcached protocol limits keys to 250 ASCII characters without whitespace/control chars
-MAX_KEY_LENGTH = 250
+# Memcached protocol limits keys to 250 raw bytes without whitespace/control chars
+MAX_KEY_BYTES = 250
 KEY_DISALLOWED_PATTERN = re.compile(r"[\s\x00-\x1f\x7f]")
 
 
-def validate_key(key: str, max_length: int = MAX_KEY_LENGTH) -> str:
+def validate_key(key: str, max_bytes: int = MAX_KEY_BYTES) -> str:
     """Validate a cache key according to the unified portable standard.
+
+    Enforces:
+    - Must be a non-empty string.
+    - UTF-8 encoded byte length must not exceed max_bytes (default 250 bytes).
+    - Must not contain whitespace or ASCII control characters.
 
     Args:
         key: The key string to validate.
-        max_length: Maximum allowed character length (defaults to 250).
+        max_bytes: Maximum allowed UTF-8 byte length (defaults to 250).
 
     Returns:
         The validated key.
@@ -29,14 +34,15 @@ def validate_key(key: str, max_length: int = MAX_KEY_LENGTH) -> str:
     if not key:
         raise CacheValidationError("Cache key cannot be empty")
 
-    if len(key) > max_length:
-        raise CacheValidationError(
-            f"Cache key length ({len(key)}) exceeds maximum allowed length of {max_length} characters"
-        )
-
     if KEY_DISALLOWED_PATTERN.search(key):
         raise CacheValidationError(
             "Cache key contains invalid characters (whitespace or control characters are not permitted)"
+        )
+
+    key_bytes = key.encode("utf-8")
+    if len(key_bytes) > max_bytes:
+        raise CacheValidationError(
+            f"Cache key UTF-8 byte length ({len(key_bytes)}) exceeds maximum allowed limit of {max_bytes} bytes"
         )
 
     return key
@@ -66,17 +72,18 @@ def validate_ttl(ttl: Optional[int]) -> Optional[int]:
     return ttl
 
 
-def validate_namespace(namespace: Optional[str]) -> Optional[str]:
+def validate_namespace(namespace: Optional[str], max_bytes: int = MAX_KEY_BYTES) -> Optional[str]:
     """Validate a namespace prefix string.
 
     Args:
         namespace: Optional namespace prefix.
+        max_bytes: Maximum allowed UTF-8 byte length.
 
     Returns:
         Validated namespace or None.
 
     Raises:
-        CacheValidationError: If namespace contains invalid characters.
+        CacheValidationError: If namespace contains invalid characters or exceeds byte limits.
     """
     if namespace is None or namespace == "":
         return None
@@ -89,6 +96,12 @@ def validate_namespace(namespace: Optional[str]) -> Optional[str]:
     if KEY_DISALLOWED_PATTERN.search(namespace):
         raise CacheValidationError(
             "Namespace contains invalid characters (whitespace or control characters are not permitted)"
+        )
+
+    ns_bytes = namespace.encode("utf-8")
+    if len(ns_bytes) > max_bytes:
+        raise CacheValidationError(
+            f"Namespace UTF-8 byte length ({len(ns_bytes)}) exceeds maximum allowed limit of {max_bytes} bytes"
         )
 
     return namespace

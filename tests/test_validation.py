@@ -18,8 +18,13 @@ def test_validate_key_errors():
     with pytest.raises(CacheValidationError, match="cannot be empty"):
         validate_key("")
 
-    with pytest.raises(CacheValidationError, match="exceeds maximum allowed length"):
+    # ASCII length limit (251 bytes)
+    with pytest.raises(CacheValidationError, match="byte length"):
         validate_key("a" * 251)
+
+    # Multi-byte Unicode exceeding 250 bytes (100 characters * 3 bytes = 300 bytes)
+    with pytest.raises(CacheValidationError, match="byte length"):
+        validate_key("€" * 100)
 
     with pytest.raises(CacheValidationError, match="whitespace or control"):
         validate_key("key with spaces")
@@ -59,3 +64,6 @@ def test_validate_namespace():
 
     with pytest.raises(CacheValidationError, match="whitespace or control"):
         validate_namespace("bad namespace")
+
+    with pytest.raises(CacheValidationError, match="byte length"):
+        validate_namespace("n" * 251)

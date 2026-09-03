@@ -1,7 +1,7 @@
 """Unified CacheService coordinating validation, serialization, adapter operations, and observability."""
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from cache_layer.contract import CacheProvider
 from cache_layer.exceptions import CacheError
@@ -62,11 +62,28 @@ class CacheService:
             return full_key
         return validated_key
 
-    def get(self, key: str) -> Any:
+    def get(self, key: str, default: Any = None) -> Any:
         """Retrieve and deserialize the value for a given key.
 
         Returns:
-            The deserialized Python value, or None on cache miss.
+            The deserialized Python value on hit (including if stored value is None),
+            or `default` (defaults to None) on cache miss.
+        """
+        is_hit, val = self.get_with_status(key)
+        if is_hit:
+            return val
+        return default
+
+    def get_with_status(self, key: str) -> Tuple[bool, Any]:
+        """Retrieve the value along with an unambiguous hit/miss boolean indicator.
+
+        Solves the Cache Miss vs Cached None ambiguity:
+        - Cache MISS: returns `(False, None)`
+        - Cache HIT with value `None`: returns `(True, None)`
+        - Cache HIT with value `X`: returns `(True, X)`
+
+        Returns:
+            Tuple of `(is_hit: bool, value: Any)`.
         """
         start = time.perf_counter()
         try:
@@ -77,12 +94,26 @@ class CacheService:
             if raw_bytes is None:
                 if self._metrics:
                     self._metrics.record_get(hit=False, latency_ms=latency_ms)
-                return None
+                return False, None
 
             value = self._serializer.deserialize(raw_bytes)
             if self._metrics:
                 self._metrics.record_get(hit=True, latency_ms=latency_ms)
-            return value
+            return True, value
+        except Exception:
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            if self._metrics:
+                self._metrics.record_error(latency_ms=latency_ms)
+            raise
+
+    def exists(self, key: str) -> bool:
+        """Check if a key exists in the cache store without deserializing its full payload."""
+        start = time.perf_counter()
+        try:
+            full_key = self._format_key(key)
+            result = self._provider.exists(full_key)
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            return result
         except Exception:
             latency_ms = (time.perf_counter() - start) * 1000.0
             if self._metrics:
@@ -94,8 +125,8 @@ class CacheService:
 
         Args:
             key: Cache key.
-            value: Any JSON-serializable or primitive Python value / bytes.
-            ttl: Optional TTL in seconds.
+            value: Any JSON-serializable or primitive Python value / bytes / None.
+            ttl: Optional TTL in seconds (non-negative integer).
 
         Returns:
             True if successfully stored, False otherwise.
@@ -137,14 +168,18 @@ class CacheService:
             raise
 
     def clear(self) -> bool:
-        """Clear all entries in the cache store/namespace.
+        """Clear entries in the cache.
+
+        If the service was configured with a namespace, only entries belonging to that
+        namespace are cleared, preserving data in all other namespaces.
+        If no namespace is configured, clears the entire configured cache store/database.
 
         Returns:
             True if cleared successfully.
         """
         start = time.perf_counter()
         try:
-            result = self._provider.clear()
+            result = self._provider.clear(namespace=self._namespace)
             latency_ms = (time.perf_counter() - start) * 1000.0
             if self._metrics:
                 self._metrics.record_clear(latency_ms=latency_ms)

@@ -116,10 +116,13 @@ def test_provider_factory_custom_adapter_registration():
         def set(self, key: str, value: bytes, ttl=None):
             return True
 
+        def exists(self, key: str):
+            return False
+
         def delete(self, key: str):
             return True
 
-        def clear(self):
+        def clear(self, namespace=None):
             return True
 
         def health_check(self):

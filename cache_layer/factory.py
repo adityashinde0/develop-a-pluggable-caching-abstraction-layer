@@ -56,10 +56,13 @@ class ProviderFactory:
         """
         if config is None:
             resolved_config = CacheConfig.from_env()
+            raw_dict = None
         elif isinstance(config, dict):
             resolved_config = CacheConfig.from_dict(config)
+            raw_dict = config
         elif isinstance(config, CacheConfig):
             resolved_config = config
+            raw_dict = None
         else:
             raise CacheConfigurationError(
                 f"Config must be CacheConfig, dict, or None, got {type(config).__name__}"
@@ -93,7 +96,15 @@ class ProviderFactory:
             )
         else:
             adapter_cls = cls._registry[backend]
-            return adapter_cls()
+            kwargs = {}
+            if raw_dict and backend in raw_dict and isinstance(raw_dict[backend], dict):
+                kwargs = raw_dict[backend]
+            elif raw_dict:
+                kwargs = {k: v for k, v in raw_dict.items() if k not in ("backend", "namespace", "redis", "memcached")}
+            try:
+                return adapter_cls(**kwargs)
+            except TypeError:
+                return adapter_cls()
 
     @classmethod
     def create_service(
@@ -121,7 +132,7 @@ class ProviderFactory:
                 f"Config must be CacheConfig, dict, or None, got {type(config).__name__}"
             )
 
-        provider = cls.create_provider(resolved_config)
+        provider = cls.create_provider(config if isinstance(config, dict) else resolved_config)
         return CacheService(
             provider=provider,
             serializer=serializer,
