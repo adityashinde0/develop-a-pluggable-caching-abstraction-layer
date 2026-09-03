@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: cache_layer_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  memcached:
+    image: memcached:1.6-alpine
+    container_name: cache_layer_memcached
+    ports:
+      - "11211:11211"
+    restart: unless-stopped
+
+  app-test:
+    build: .
+    container_name: cache_layer_test_runner
+    depends_on:
+      redis:
+        condition: service_healthy
+      memcached:
+        condition: service_started
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MEMCACHED_HOST=memcached
+      - MEMCACHED_PORT=11211
+    command: ["pytest", "--cov=cache_layer", "-v"]

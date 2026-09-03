@@ -29,9 +29,15 @@ from cache_layer.exceptions import (
     CacheTimeoutError,
 )
 
+# Relative TTL threshold in Memcached protocol (30 days in seconds)
+MEMCACHED_MAX_RELATIVE_TTL = 2592000
+
 
 class MemcachedAdapter(CacheProvider):
-    """Production-grade Memcached adapter with connection pooling and normalized error mapping."""
+    """Production-grade Memcached adapter with connection pooling, TTL normalization,
+
+    and namespace-safe versioned invalidation.
+    """
 
     def __init__(
         self,
@@ -63,6 +69,9 @@ class MemcachedAdapter(CacheProvider):
                 ignore_exc=False,
                 default_noreply=False,
             )
+
+        # In-memory cached namespace version mapping to reduce round-trips
+        self._ns_version_cache: Dict[str, int] = {}
 
     @property
     def provider_name(self) -> str:
@@ -102,9 +111,44 @@ class MemcachedAdapter(CacheProvider):
             f"Unexpected error in Memcached adapter during {op_name}: {err}", original_error=err
         ) from err
 
+    def _get_namespace_version(self, namespace: str) -> int:
+        """Fetch or initialize the epoch version for a namespace in Memcached."""
+        if namespace in self._ns_version_cache:
+            return self._ns_version_cache[namespace]
+
+        version_key = f"_ns_ver:{namespace}"
+        try:
+            val = self._client.get(version_key)
+            if val is None:
+                ver = 1
+            else:
+                if isinstance(val, (bytes, bytearray)):
+                    val_str = val.decode("ascii", errors="ignore")
+                else:
+                    val_str = str(val)
+                ver = int(val_str)
+        except Exception:
+            ver = 1
+
+        self._ns_version_cache[namespace] = ver
+        return ver
+
+    def _transform_key_for_namespace(self, key: str) -> str:
+        """If key has a namespace prefix (e.g. 'ns:sub_key'), inject current namespace version
+
+        (e.g. 'ns:v1:sub_key') for safe, instant namespace invalidation without full flush.
+        """
+        if ":" in key:
+            parts = key.split(":", 1)
+            ns, sub_key = parts[0], parts[1]
+            ver = self._get_namespace_version(ns)
+            return f"{ns}:v{ver}:{sub_key}"
+        return key
+
     def get(self, key: str) -> Optional[bytes]:
         try:
-            val = self._client.get(key)
+            transformed_key = self._transform_key_for_namespace(key)
+            val = self._client.get(transformed_key)
             if val is None:
                 return None
             if isinstance(val, memoryview):
@@ -121,30 +165,63 @@ class MemcachedAdapter(CacheProvider):
 
     def set(self, key: str, value: bytes, ttl: Optional[int] = None) -> bool:
         try:
-            expire = ttl if ttl is not None else 0
-            if ttl == 0:
-                self._client.delete(key)
+            transformed_key = self._transform_key_for_namespace(key)
+
+            if ttl is None:
+                expire = 0
+            elif ttl == 0:
+                self._client.delete(transformed_key)
                 return True
-            result = self._client.set(key, value, expire=expire)
+            elif ttl > MEMCACHED_MAX_RELATIVE_TTL:
+                # Memcached requires absolute Unix epoch timestamp for TTL > 30 days (2,592,000s)
+                expire = int(time.time() + ttl)
+            else:
+                expire = int(ttl)
+
+            result = self._client.set(transformed_key, value, expire=expire)
             return bool(result)
         except (CacheConnectionError, CacheTimeoutError, CacheBackendError):
             raise
         except Exception as err:
             self._handle_error(err, "set")
 
+    def exists(self, key: str) -> bool:
+        try:
+            transformed_key = self._transform_key_for_namespace(key)
+            val = self._client.get(transformed_key)
+            return val is not None
+        except (CacheConnectionError, CacheTimeoutError, CacheBackendError):
+            raise
+        except Exception as err:
+            self._handle_error(err, "exists")
+
     def delete(self, key: str) -> bool:
         try:
-            self._client.delete(key)
+            transformed_key = self._transform_key_for_namespace(key)
+            self._client.delete(transformed_key)
             return True
         except (CacheConnectionError, CacheTimeoutError, CacheBackendError):
             raise
         except Exception as err:
             self._handle_error(err, "delete")
 
-    def clear(self) -> bool:
+    def clear(self, namespace: Optional[str] = None) -> bool:
         try:
-            self._client.flush_all()
-            return True
+            if namespace is not None and namespace != "":
+                # Namespace-safe clear: increment namespace version epoch
+                version_key = f"_ns_ver:{namespace}"
+                current_ver = self._get_namespace_version(namespace)
+                new_ver = current_ver + 1
+                try:
+                    self._client.set(version_key, str(new_ver).encode("ascii"))
+                except Exception:
+                    pass
+                self._ns_version_cache[namespace] = new_ver
+                return True
+            else:
+                self._client.flush_all()
+                self._ns_version_cache.clear()
+                return True
         except (CacheConnectionError, CacheTimeoutError, CacheBackendError):
             raise
         except Exception as err:

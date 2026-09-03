@@ -122,6 +122,15 @@ class RedisAdapter(CacheProvider):
         except Exception as err:
             self._handle_error(err, "set")
 
+    def exists(self, key: str) -> bool:
+        try:
+            res = self._client.exists(key)
+            return bool(res > 0)
+        except (CacheConnectionError, CacheTimeoutError, CacheBackendError):
+            raise
+        except Exception as err:
+            self._handle_error(err, "exists")
+
     def delete(self, key: str) -> bool:
         try:
             self._client.delete(key)
@@ -131,10 +140,23 @@ class RedisAdapter(CacheProvider):
         except Exception as err:
             self._handle_error(err, "delete")
 
-    def clear(self) -> bool:
+    def clear(self, namespace: Optional[str] = None) -> bool:
         try:
-            self._client.flushdb()
-            return True
+            if namespace is not None and namespace != "":
+                match_pattern = f"{namespace}:*"
+                keys_to_delete = []
+                # Scan keys matching namespace pattern in chunks
+                for k in self._client.scan_iter(match=match_pattern, count=500):
+                    keys_to_delete.append(k)
+                    if len(keys_to_delete) >= 500:
+                        self._client.delete(*keys_to_delete)
+                        keys_to_delete.clear()
+                if keys_to_delete:
+                    self._client.delete(*keys_to_delete)
+                return True
+            else:
+                self._client.flushdb()
+                return True
         except (CacheConnectionError, CacheTimeoutError, CacheBackendError):
             raise
         except Exception as err:

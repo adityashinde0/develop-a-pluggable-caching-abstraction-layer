@@ -14,6 +14,7 @@ from cache_layer.exceptions import (
     CacheValidationError,
 )
 from cache_layer.factory import ProviderFactory
+from cache_layer.metrics import MetricsCollector
 from cache_layer.serializer import PortableJsonSerializer, Serializer
 from cache_layer.service import CacheService
 from cache_layer.validation import validate_key, validate_namespace, validate_ttl
@@ -27,6 +28,7 @@ __all__ = [
     "RedisConfig",
     "MemcachedConfig",
     "ProviderFactory",
+    "MetricsCollector",
     "Serializer",
     "PortableJsonSerializer",
     "validate_key",

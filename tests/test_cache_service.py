@@ -36,12 +36,20 @@ class InMemoryMockProvider(CacheProvider):
             self._store[key] = value
         return True
 
+    def exists(self, key: str) -> bool:
+        return key in self._store
+
     def delete(self, key: str):
         self._store.pop(key, None)
         return True
 
-    def clear(self):
-        self._store.clear()
+    def clear(self, namespace=None):
+        if namespace:
+            for k in list(self._store.keys()):
+                if k.startswith(f"{namespace}:"):
+                    self._store.pop(k, None)
+        else:
+            self._store.clear()
         return True
 
     def health_check(self):
@@ -63,9 +71,20 @@ def test_cache_service_interchangeability(provider_class):
         mock_store[k] = v
         return True
 
-    def fake_delete(k):
-        mock_store.pop(k, None)
+    def fake_delete(*keys):
+        for k in keys:
+            mock_store.pop(k, None)
         return True
+
+    def fake_scan_iter(match=None, count=None):
+        if match:
+            prefix = match.replace("*", "")
+            for k in list(mock_store.keys()):
+                if k.startswith(prefix):
+                    yield k
+        else:
+            for k in list(mock_store.keys()):
+                yield k
 
     def fake_clear(*args, **kwargs):
         mock_store.clear()
@@ -74,6 +93,7 @@ def test_cache_service_interchangeability(provider_class):
     mock_client.get.side_effect = fake_get
     mock_client.set.side_effect = fake_set
     mock_client.delete.side_effect = fake_delete
+    mock_client.scan_iter.side_effect = fake_scan_iter
     mock_client.flushdb.side_effect = fake_clear
     mock_client.flush_all.side_effect = fake_clear
     mock_client.ping.return_value = True

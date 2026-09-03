@@ -71,8 +71,31 @@ class CacheProvider(ABC):
         pass
 
     @abstractmethod
-    def clear(self) -> bool:
-        """Clear all entries in the configured cache store or namespace.
+    def exists(self, key: str) -> bool:
+        """Check if a key exists in the cache store without retrieving its full payload.
+
+        Args:
+            key: The validated cache key.
+
+        Returns:
+            True if key exists and has not expired, False otherwise.
+
+        Raises:
+            CacheConnectionError: If connection to backend fails.
+            CacheTimeoutError: If operation times out.
+            CacheBackendError: For other unexpected backend errors.
+        """
+        pass
+
+    @abstractmethod
+    def clear(self, namespace: Optional[str] = None) -> bool:
+        """Clear entries in the cache store.
+
+        If a namespace is provided, only entries belonging to that namespace are cleared.
+        If namespace is None, clears the entire configured cache store/database.
+
+        Args:
+            namespace: Optional namespace prefix to restrict clearing.
 
         Returns:
             True if clear succeeded, False otherwise.
