@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Header } from './components/Header';
+import { Header, TabType } from './components/Header';
 import { ProviderSwitcher } from './components/ProviderSwitcher';
 import { ArchitectureVisualizer } from './components/ArchitectureVisualizer';
+import { ThreeArchitectureVisualizer } from './components/ThreeArchitectureVisualizer';
 import { HealthInfoCard } from './components/HealthInfoCard';
 import { CacheOperationsPanel } from './components/CacheOperationsPanel';
 import { ResultPanel } from './components/ResultPanel';
@@ -27,7 +28,7 @@ export const App: React.FC = () => {
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null);
   const [lastResult, setLastResult] = useState<OperationResult | null>(null);
   const [activityLogs, setActivityLogs] = useState<ActivityLogItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'console' | 'semantics' | 'ecommerce' | 'architecture' | 'tour'>('console');
+  const [activeTab, setActiveTab] = useState<TabType>('console');
 
   // Loading States
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -283,7 +284,20 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Tab 2: Guided Tour */}
+      {/* Main Tab 2: 3D Architecture Visualizer */}
+      {activeTab === '3d' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <ThreeArchitectureVisualizer
+            currentProvider={currentProvider}
+            onSwitchProvider={handleSwitch}
+            onLogResult={handleLogExternalResult}
+            namespace={info?.namespace}
+          />
+          <ActivityLog logs={activityLogs} onClearLogs={() => setActivityLogs([])} />
+        </div>
+      )}
+
+      {/* Main Tab 3: Guided Tour */}
       {activeTab === 'tour' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <GuidedDemoRunner
@@ -298,7 +312,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Tab 3: Semantic Demos */}
+      {/* Main Tab 4: Semantic Demos */}
       {activeTab === 'semantics' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <SemanticDemos onLogResult={handleLogExternalResult} />
@@ -309,7 +323,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Tab 4: E-Commerce Demo */}
+      {/* Main Tab 5: E-Commerce Demo */}
       {activeTab === 'ecommerce' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <ECommerceDemo
@@ -320,7 +334,7 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Tab 5: Architecture & Invariants */}
+      {/* Main Tab 6: Architecture & Invariants */}
       {activeTab === 'architecture' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <ArchitectureVisualizer

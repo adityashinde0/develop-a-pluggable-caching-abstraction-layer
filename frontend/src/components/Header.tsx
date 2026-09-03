@@ -1,12 +1,14 @@
 import React from 'react';
-import { Layers, Activity, RefreshCw, Zap, ShoppingBag, Code, Compass } from 'lucide-react';
+import { Layers, Activity, RefreshCw, Zap, ShoppingBag, Code, Compass, Box } from 'lucide-react';
 import { HealthResponse, MetricsSnapshot } from '../types';
+
+export type TabType = 'console' | 'tour' | '3d' | 'semantics' | 'ecommerce' | 'architecture';
 
 interface HeaderProps {
   health: HealthResponse | null;
   metrics: MetricsSnapshot | null;
-  activeTab: 'console' | 'semantics' | 'ecommerce' | 'architecture' | 'tour';
-  setActiveTab: (tab: 'console' | 'semantics' | 'ecommerce' | 'architecture' | 'tour') => void;
+  activeTab: TabType;
+  setActiveTab: (tab: TabType) => void;
   onRefresh: () => void;
   isRefreshing: boolean;
 }
@@ -126,11 +128,24 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         <button
+          className={`btn ${activeTab === '3d' ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={() => setActiveTab('3d')}
+          style={{
+            padding: '0.4rem 0.8rem',
+            fontSize: '0.825rem',
+            background: activeTab === '3d' ? 'linear-gradient(135deg, #0284c7, #2563eb)' : undefined,
+            borderColor: activeTab === '3d' ? undefined : '#38bdf8'
+          }}
+        >
+          <Box size={14} color={activeTab === '3d' ? '#fff' : '#38bdf8'} /> 3D Architecture Visualizer
+        </button>
+
+        <button
           className={`btn ${activeTab === 'tour' ? 'btn-primary' : 'btn-secondary'}`}
           onClick={() => setActiveTab('tour')}
           style={{ padding: '0.4rem 0.8rem', fontSize: '0.825rem', borderColor: activeTab === 'tour' ? undefined : 'var(--accent-purple)' }}
         >
-          <Compass size={14} /> Guided Judge Tour (8-Step)
+          <Compass size={14} /> Guided Judge Tour
         </button>
 
         <button
@@ -154,7 +169,7 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={() => setActiveTab('architecture')}
           style={{ padding: '0.4rem 0.8rem', fontSize: '0.825rem' }}
         >
-          <Code size={14} /> Architecture & Invariants
+          <Code size={14} /> Invariants & Specifications
         </button>
       </div>
     </header>
