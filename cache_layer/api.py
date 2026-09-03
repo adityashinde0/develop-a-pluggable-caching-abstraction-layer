@@ -125,11 +125,21 @@ async def lifespan(app: FastAPI):
     _service_manager.close()
 
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="Pluggable Caching Abstraction API",
     description="Unified, configuration-driven caching service supporting interchangeable Redis and Memcached backends.",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

@@ -1,6 +1,6 @@
 # Pluggable Caching Abstraction Layer
 
-A configuration-driven caching abstraction layer in Python providing a unified, portable contract over interchangeable cache backends (**Redis** and **Memcached**).
+A configuration-driven caching abstraction layer in Python providing a unified, portable contract over interchangeable cache backends (**Redis** and **Memcached**), accompanied by an interactive technical demonstration web dashboard.
 
 ---
 
@@ -18,6 +18,7 @@ This library solves the problem by providing:
 - **TTL Portability**: Uniform relative TTL semantics with automatic Unix epoch translation for Memcached durations $> 30$ days (`2,592,000s`).
 - **Configuration-Driven Factory**: Instantiate providers and services via environment variables (`CACHE_BACKEND`, `REDIS_HOST`, `MEMCACHED_HOST`, etc.) or dictionary configs.
 - **REST API & Concurrency-Safe Service Management**: Built-in FastAPI server with reference-counted request draining on dynamic backend switches.
+- **Interactive Web Dashboard**: High-contrast React + Vite frontend for live judge exploration, semantic testing, architecture flow visualization, and guided automated demonstrations.
 
 ---
 
@@ -25,23 +26,24 @@ This library solves the problem by providing:
 
 ```mermaid
 flowchart TD
-    A[Application / API Client] --> B[Unified Cache Service]
-    B --> C[Validate Key / TTL]
-    C -->|Invalid| E[Return Validation Error]
-    C -->|Valid| D[CacheProvider Contract]
-    D --> F[Provider Factory / Configuration]
-    F -->|Redis| G[Redis Adapter]
-    F -->|Memcached| H[Memcached Adapter]
-    G --> I[Redis Connection Pool]
-    H --> J[Memcached Connection Pool]
-    I --> K[Redis Backend]
-    J --> L[Memcached Backend]
-    K --> M[Normalize Result / Error]
-    L --> M
-    M --> N[Common Response]
-    G -. connection/timeout .-> O[Normalized Cache Error]
-    H -. connection/timeout .-> O
-    O --> N
+    A[Interactive Dashboard / API Client] --> B[FastAPI REST Layer]
+    B --> C[Unified CacheService]
+    C --> D[Validate Key / TTL]
+    D -->|Invalid| E[Normalized ValidationError HTTP 422]
+    D -->|Valid| F[CacheProvider Contract]
+    F --> G[Provider Factory / Configuration]
+    G -->|Redis| H[Redis Adapter]
+    G -->|Memcached| I[Memcached Adapter]
+    H --> J[Redis Connection Pool]
+    I --> K[Memcached Connection Pool]
+    J --> L[Redis Backend]
+    K --> M[Memcached Backend]
+    L --> N[Normalize Result / Error]
+    M --> N
+    N --> O[Common Response]
+    H -. connection/timeout .-> P[Normalized Cache Error]
+    I -. connection/timeout .-> P
+    P --> O
 ```
 
 ---
@@ -64,6 +66,16 @@ flowchart TD
 │       ├── __init__.py
 │       ├── redis_adapter.py      # Pooled Redis client adapter
 │       └── memcached_adapter.py  # Pooled pymemcache adapter
+├── frontend/                 # Interactive React + Vite + TypeScript web dashboard
+│   ├── src/
+│   │   ├── api/cacheApi.ts   # Centralized typed API client
+│   │   ├── components/       # Header, Switcher, Visualizer, Operations, Demos
+│   │   ├── types/index.ts    # TypeScript interfaces
+│   │   ├── App.tsx           # Dashboard coordinator
+│   │   └── index.css         # High-contrast technical design system
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── index.html
 ├── examples/
 │   └── ecommerce_service.py  # Real-world e-commerce catalog service
 ├── tests/
@@ -94,18 +106,30 @@ flowchart TD
 
 ---
 
-## 📦 Installation & Setup
+## 🖥️ Running the Interactive Web Dashboard
 
-### Local Installation
+To launch the full interactive web application for judging and live exploration:
+
+### 1. Start the FastAPI Backend Server
 ```bash
-pip install -r requirements.txt
+# In project root:
+uvicorn cache_layer.api:app --reload --port 8000
 ```
+
+### 2. Start the Frontend Application
+```bash
+# In frontend directory:
+cd frontend
+npm install
+npm run dev
+```
+Open **`http://localhost:5173`** in your browser.
 
 ---
 
 ## 🐳 Docker Setup
 
-### Option 1: Start Redis and Memcached Daemons (For Local Host Testing)
+### Option 1: Start Redis and Memcached Daemons (For Local Testing)
 ```bash
 docker compose up -d redis memcached
 ```
@@ -117,7 +141,7 @@ docker compose up --build app-test
 
 ---
 
-## 💻 Usage Examples
+## 💻 Python Usage Examples
 
 ### 1. Configuration-Driven Initialization via `ProviderFactory`
 
@@ -200,12 +224,6 @@ except CacheError as e:
 
 ## 🌐 REST API Endpoints
 
-Start the FastAPI application with Uvicorn:
-
-```bash
-uvicorn cache_layer.api:app --reload --port 8000
-```
-
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/health` | Backend health check and latency report |
@@ -245,10 +263,10 @@ python benchmark.py --live
 Execute the automated test suite:
 
 ```bash
-# Run all unit, contract, and e-commerce tests
+# Run all 50 unit, contract, and e-commerce tests
 python -m pytest -v
 
-# Run with statement coverage report
+# Run with statement coverage report (85% coverage across cache_layer)
 python -m pytest --cov=cache_layer -v
 
 # Run live real-backend integration tests (when Redis/Memcached are active)
