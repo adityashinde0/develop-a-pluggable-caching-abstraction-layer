@@ -354,3 +354,13 @@ def update_product_price(product_id: str, req: ProductPriceUpdateRequest):
             "new_price": req.price,
             "cache_invalidated": True,
         }
+
+
+# Mount built frontend static dashboard at root '/' if available
+import os
+from fastapi.staticfiles import StaticFiles
+
+_frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+if os.path.exists(_frontend_dist):
+    app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="frontend")
+
