@@ -3,9 +3,12 @@
 import socket
 from unittest.mock import MagicMock
 import pytest
-from pymemcache.exceptions import MemcacheError, MemcacheServerError
 
-from cache_layer.adapters.memcached_adapter import MemcachedAdapter
+from cache_layer.adapters.memcached_adapter import (
+    MemcachedAdapter,
+    MemcacheError,
+    MemcacheServerError,
+)
 from cache_layer.exceptions import (
     CacheBackendError,
     CacheConnectionError,
